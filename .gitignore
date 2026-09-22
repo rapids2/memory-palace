@@ -1,0 +1,9 @@
+# 备份文件里含有你的地图图片与复习进度，不要提交到仓库
+memory_palace_backup_*.json
+*.backup.json
+backups/
+
+# 系统杂物
+.DS_Store
+Thumbs.db
+desktop.ini
