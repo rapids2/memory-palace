@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆宫殿智能复习中枢 v4.0 (Memory Palace Hub)</title>
+    <meta name="description" content="基于记忆宫殿法与自适应间隔重复的单词复习工具">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="记忆宫殿">
+    <style>
+        :root {
+            --bg-primary: #070c18;
+            --bg-card: #0f172a;
+            --bg-card-hover: #17233f;
+            --bg-input: #091024;
+            --accent-cyan: #38bdf8;
+            --accent-glow: #0284c7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #1e293b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --flagged: #ec4899;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        }
+
+        html { height: 100%; }
+
+        /* 桌面端：body 锁定一屏高，main 用 flex 吃掉剩余空间。
+           不用 calc(100vh - 固定值)，否则 header 换行或备份横幅出现时会算错。 */
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            z-index: 30;
+        }
+
+        header h1 {
+            font-size: 1.12rem;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background-color: var(--accent-glow);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            user-select: none;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0369a1;
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        button.btn-secondary {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+        }
+        button.btn-secondary:hover:not(:disabled) {
+            background-color: var(--bg-card-hover);
+            border-color: var(--accent-cyan);
+        }
+
+        button.btn-danger {
+            background-color: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+        button.btn-danger:hover:not(:disabled) {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        button.btn-success { background-color: var(--success); }
+        button.btn-success:hover:not(:disabled) { background-color: #059669; }
+
+        button.btn-warning { background-color: var(--warning); }
+        button.btn-warning:hover:not(:disabled) { background-color: #d97706; }
+
+        main {
+            flex: 1 1 auto;
+            min-height: 0;              /* 关键：否则 flex 项会被内容撑开，整页变成 3000px 长 */
+            max-width: 1650px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 14px 18px;
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            grid-template-rows: minmax(0, 1fr);   /* 关键：网格行不许被内容撑高 */
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        /* 移动端：恢复正常的整页滚动 */
+        @media (max-width: 960px) {
+            body { height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: auto; }
+            main {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+                overflow: visible;
+            }
+            .sidebar { overflow-y: visible; }
+        }
+
+        .sidebar {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .upload-section {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            background: rgba(2, 132, 199, 0.02);
+        }
+
+        .form-group { margin-bottom: 8px; text-align: left; }
+
+        label {
+            display: block;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 3px;
+            font-weight: 500;
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 7px 9px;
+            background-color: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            color: var(--text-main);
+            font-size: 0.8rem;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            line-height: 1.35;
+        }
+
+        .queue-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .map-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 60px;
+        }
+
+        .map-card {
+            background-color: #0b1329;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: border-color 0.15s, background-color 0.15s;
+            position: relative;
+        }
+
+        .map-card:hover, .map-card.active {
+            border-color: var(--accent-cyan);
+            background-color: var(--bg-card-hover);
+        }
+
+        .map-card:focus-visible { outline: 2px solid var(--accent-cyan); }
+
+        .map-card-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .map-card-title > span:first-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .map-card-meta {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stage-badge {
+            font-size: 0.68rem;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background-color: rgba(56, 189, 248, 0.12);
+            color: var(--accent-cyan);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .stage-badge.due { background-color: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .stage-badge.done { background-color: rgba(16, 185, 129, 0.2); color: var(--success); }
+
+        .viewer-container {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            min-height: 0;
+        }
+
+        .viewer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .viewer-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 390px;
+            gap: 14px;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+
+        /* ---------- 图像视口 ---------- */
+        .image-viewport-wrapper {
+            position: relative;
+            background-color: #040813;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .viewport-toolbar {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 5px;
+            z-index: 25;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 3px 6px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(4px);
+        }
+
+        .viewport-toolbar button {
+            padding: 3px 7px;
+            font-size: 0.72rem;
+            background: var(--bg-card-hover);
+        }
+
+        .zoom-readout {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            align-self: center;
+            padding: 0 4px;
+            min-width: 42px;
+            text-align: center;
+        }
+
+        /* 关键：容器不再用 flex 居中，wrapper 绝对定位在 (0,0)。
+           这样 transform-origin 与容器原点重合，光标锚定缩放的数学才是精确的。 */
+        .image-canvas-container {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            cursor: grab;
+            min-height: 0;
+        }
+        .image-canvas-container:active { cursor: grabbing; }
+        .image-canvas-container.pinning-mode { cursor: crosshair !important; }
+
+        #emptyMapPlaceholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .image-transform-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: inline-block;
+            transform-origin: 0 0;
+            line-height: 0;
+            user-select: none;
+            -webkit-user-drag: none;
+            will-change: transform;
+        }
+
+        .image-transform-wrapper img {
+            display: block;
+            max-width: none;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        #pinsLayer {
+            --pin-scale: 1;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .map-pin {
+            position: absolute;
+            min-width: 26px;
+            height: 26px;
+            padding: 0 6px;
+            background-color: rgba(2, 132, 199, 0.95);
+            border: 2px solid #ffffff;
+            border-radius: 13px;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: bold;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform: translate(-50%, -50%) scale(var(--pin-scale));
+            transform-origin: center center;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.9);
+            cursor: pointer;
+            pointer-events: auto;
+            z-index: 15;
+            transition: background-color 0.15s;
+        }
+
+        .map-pin:hover, .map-pin.active {
+            transform: translate(-50%, -50%) scale(calc(var(--pin-scale) * 1.35));
+            background-color: #f59e0b;
+            border-color: #fef08a;
+            box-shadow: 0 0 14px #f59e0b;
+            z-index: 20;
+        }
+
+        .map-pin.flagged { border-color: var(--flagged); background-color: #be185d; }
+
+        .map-pin.target {
+            background-color: var(--warning);
+            border-color: #fff7ed;
+            animation: pinPulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pinPulse {
+            0%, 100% { box-shadow: 0 0 6px #f59e0b; }
+            50% { box-shadow: 0 0 18px #f59e0b; }
+        }
+
+        /* ---------- 提取练习面板 ---------- */
+        .practice-panel {
+            background-color: #0b1224;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .practice-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 6px;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .mode-toggle-group { display: flex; gap: 4px; }
+
+        .mode-btn, .filter-flag-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 3px 6px;
+            font-size: 0.72rem;
+            border-radius: 4px;
+        }
+
+        .mode-btn.active {
+            background: var(--accent-glow);
+            color: white;
+            border-color: var(--accent-cyan);
+        }
+
+        .filter-flag-btn.active {
+            background: rgba(236, 72, 153, 0.2);
+            color: #f472b6;
+            border-color: var(--flagged);
+        }
+
+        .loci-scroll {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 4px;
+            min-height: 0;
+        }
+
+        .loci-card {
+            background: #0f182f;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            padding: 8px 10px;
+            transition: border-color 0.15s, background-color 0.15s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .loci-card:hover, .loci-card.highlight {
+            border-color: var(--accent-cyan);
+            background: #182648;
+        }
+
+        .loci-card.flagged { border-left: 3px solid var(--flagged); }
+
+        .loci-card.pin-target {
+            border-color: var(--warning);
+            background: #24200f;
+        }
+
+        .loci-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            gap: 6px;
+        }
+
+        .loci-num {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .loci-actions { display: flex; gap: 2px; align-items: center; }
+
+        .flag-toggle-btn, .clear-pin-btn {
+            background: none;
+            border: none;
+            padding: 2px 4px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        .flag-toggle-btn.active { color: #f472b6; }
+        .flag-toggle-btn:hover, .clear-pin-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+        .mask-block {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 108px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            word-break: break-word;
+        }
+
+        .mask-block.masked-word {
+            background-color: #1e293b;
+            color: #94a3b8;
+            border: 1px dashed var(--accent-cyan);
+            font-size: 0.72rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .mask-block.masked-word:hover { border-color: #fff; color: #fff; }
+
+        .mask-block.revealed-word {
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid transparent;
+        }
+
+        .loci-desc-box {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
+        .loci-desc-box.masked-cue {
+            background-color: #1e293b;
+            color: #94a3b8;
+            border: 1px dashed var(--warning);
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            display: inline-block;
+            cursor: pointer;
+        }
+        .loci-desc-box.masked-cue:hover { border-color: #fff; color: #fff; }
+
+        /* ---------- 评分栏 ---------- */
+        .recall-feedback-bar {
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .recall-status-desc {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .recall-btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+
+        .recall-btn-group button {
+            justify-content: center;
+            flex-direction: column;
+            gap: 1px;
+            font-size: 0.78rem;
+            padding: 7px 2px;
+            line-height: 1.25;
+            text-align: center;
+            position: relative;
+        }
+
+        .recall-btn-group button.recommended::before {
+            content: "建议";
+            position: absolute;
+            top: -7px;
+            right: -4px;
+            background: var(--accent-cyan);
+            color: #04111f;
+            font-size: 0.58rem;
+            padding: 1px 4px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
+        .kbd-hint { font-size: 0.65rem; opacity: 0.85; }
+
+        /* ---------- Toast ---------- */
+        #toastContainer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 360px;
+        }
+
+        .toast {
+            background: #1e293b;
+            color: white;
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--accent-cyan);
+            padding: 9px 14px;
+            border-radius: 5px;
+            font-size: 0.82rem;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+            animation: slideIn 0.2s ease-out;
+            min-width: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            line-height: 1.35;
+        }
+
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+
+        .toast-action {
+            flex-shrink: 0;
+            padding: 3px 9px;
+            font-size: 0.75rem;
+            background: var(--accent-glow);
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(110%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* ---------- 模态框 ---------- */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            backdrop-filter: blur(2px);
+        }
+
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 18px;
+            max-width: 460px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+        }
+
+        .modal-title {
+            font-size: 0.95rem;
+            color: var(--accent-cyan);
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+
+        .modal-body {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+        .modal-hint {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-right: auto;
+            align-self: center;
+        }
+
+        .backup-warning-banner {
+            background: rgba(245, 158, 11, 0.12);
+            border-bottom: 1px solid var(--warning);
+            color: #fef08a;
+            padding: 5px 16px;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* =========================================================
+           移动端覆盖 —— 必须放在所有基础规则之后，否则会被同级选择器覆盖
+           ========================================================= */
+        @media (max-width: 960px) {
+            .viewer-container { overflow: visible; height: auto; }
+            .viewer-content {
+                grid-template-columns: 1fr;
+                overflow: visible;
+                height: auto;
+            }
+            .image-viewport-wrapper { min-height: 56vh; }
+            .practice-panel { min-height: 60vh; overflow: visible; }
+            .loci-scroll { overflow-y: visible; }
+            .recall-btn-group button { font-size: 0.74rem; }
+            header h1 { font-size: 1rem; }
+            #toastContainer { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+            .toast { min-width: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="backupBanner" class="backup-warning-banner" style="display: none;">
+        <span>⚠️ 已超过 7 天未导出备份，建议点击右上角「导出完整备份」以防浏览器清理本地数据。</span>
+        <button id="dismissBackupBtn" style="padding: 2px 6px; font-size: 0.7rem; background: var(--warning);">知道了</button>
+    </div>
+
+    <header>
+        <h1>🏛️ 记忆宫殿智能复习中枢 v4.0</h1>
+        <div class="header-actions">
+            <button id="notifyBtn" class="btn-secondary">🔔 桌面通知</button>
+            <button id="exportFullBtn" class="btn-secondary">💾 导出完整备份 (含图)</button>
+            <button id="exportMetaBtn" class="btn-secondary">📄 仅导出元数据</button>
+            <button id="importTriggerBtn" class="btn-secondary">📂 导入并合并</button>
+            <input type="file" id="importFile" style="display:none" accept=".json">
+        </div>
+    </header>
+
+    <main>
+        <!-- 左侧录入与队列 -->
+        <aside class="sidebar">
+            <div class="upload-section">
+                <h3 style="font-size: 0.85rem; margin-bottom: 8px; color: var(--accent-cyan);">➕ 录入新地图</h3>
+                <div class="form-group">
+                    <label for="mapName">地图名称 / 空间主题</label>
+                    <input type="text" id="mapName" placeholder="如：大地图01-科技艺术博览馆">
+                </div>
+                <div class="form-group">
+                    <label for="mapImage">地图图片 (Blob 存储于 IndexedDB)</label>
+                    <input type="file" id="mapImage" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label for="mapWords">桩点单词（支持 <code>01. word (线索)</code> 或 <code>word - 线索</code>）</label>
+                    <textarea id="mapWords" placeholder="01. abolish (公牛撞毁旧法条)&#10;02. abortion (急停胚胎光柱)&#10;03. above (金色箭头顶端白鸽)..."></textarea>
+                </div>
+                <button id="addMapBtn" style="width: 100%; justify-content: center;">🚀 存入宫殿并开启自适应复习</button>
+            </div>
+
+            <div style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0;">
+                <div class="queue-title">
+                    <span>📋 复习队列</span>
+                    <span id="queueCount" style="font-size: 0.75rem; color: var(--text-muted); font-weight:500;">0 待复习 / 共 0 座</span>
+                </div>
+                <div class="map-list" id="mapList" role="listbox" aria-label="复习队列" style="margin-top: 8px;"></div>
+            </div>
+        </aside>
+
+        <!-- 右侧主视觉与练习区 -->
+        <section class="viewer-container">
+            <div class="viewer-header">
+                <div style="min-width:0;">
+                    <h2 id="currentMapTitle" style="font-size: 1.05rem; color: var(--text-main);">请选择左侧地图开始复习</h2>
+                    <p id="currentMapMeta" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">自适应间隔记忆系统 (Adaptive Spaced Repetition)</p>
+                </div>
+                <div id="reviewHeaderActions" style="display: none; gap: 6px;">
+                    <button class="btn-secondary" id="editMapBtn">✏️ 编辑</button>
+                    <button class="btn-secondary" id="pinModeBtn">📍 标定桩点坐标</button>
+                    <button class="btn-danger" id="deleteMapBtn">🗑️ 删除地图</button>
+                </div>
+            </div>
+
+            <div class="viewer-content" id="viewerContent">
+                <!-- 图像视口 -->
+                <div class="image-viewport-wrapper">
+                    <div class="viewport-toolbar">
+                        <button id="zoomInBtn">🔍 放大</button>
+                        <span class="zoom-readout" id="zoomReadout">100%</span>
+                        <button id="zoomOutBtn">🔍 缩小</button>
+                        <button id="fitViewBtn">↺ 适应窗口</button>
+                    </div>
+                    <div class="image-canvas-container" id="canvasContainer">
+                        <div id="emptyMapPlaceholder">🗺️ 请在左侧选择或录入地图</div>
+                        <div class="image-transform-wrapper" id="imageTransformWrapper" style="display: none;">
+                            <img id="activeMapImage" alt="地图实景">
+                            <div id="pinsLayer"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 提取练习面板 -->
+                <div class="practice-panel" id="practicePanel">
+                    <div class="practice-controls">
+                        <span style="font-size:0.82rem; font-weight:700; color:var(--accent-cyan);">🧠 主动提取练习</span>
+                        <div class="mode-toggle-group">
+                            <button class="mode-btn active" id="modeMaskWord" data-mode="mask-word">遮单词</button>
+                            <button class="mode-btn" id="modeMaskCue" data-mode="mask-cue">遮场景</button>
+                            <button class="mode-btn" id="modeShowAll" data-mode="show-all">全显</button>
+                        </div>
+                        <button class="filter-flag-btn" id="filterFlagBtn">🚩 仅看生疏</button>
+                    </div>
+
+                    <div class="loci-scroll" id="lociScroll">
+                        <p style="color:var(--text-muted); font-size:0.8rem; text-align:center; margin-top:20px;">请先选定一座地图</p>
+                    </div>
+
+                    <div class="recall-feedback-bar" id="recallFeedbackBar" style="display: none;">
+                        <div class="recall-status-desc">
+                            <span id="recallHint">本轮提取评估（快捷键 1 / 2 / 3）</span>
+                            <span id="flagStatsText" style="color: #f472b6; white-space:nowrap;">0 个标记生疏</span>
+                        </div>
+                        <div class="recall-btn-group">
+                            <button class="btn-danger" id="btnForgot" data-rating="forgot">
+                                ❌ 遗忘<span class="kbd-hint">[1] 重测</span>
+                            </button>
+                            <button class="btn-warning" id="btnHard" data-rating="hard">
+                                ⚠️ 模糊<span class="kbd-hint">[2] 维持</span>
+                            </button>
+                            <button class="btn-success" id="btnEasy" data-rating="easy">
+                                ✨ 清晰<span class="kbd-hint">[3] 推进</span>
+                            </button>
+                        </div>
+                        <div id="earlyReviewNotice" style="display:none; font-size:0.7rem; color:var(--warning); text-align:center;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toastContainer"></div>
+
+    <!-- 通用确认框 -->
+    <div id="confirmModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-title" id="modalTitle">请确认</div>
+            <div class="modal-body" id="modalBody">确定要执行此操作吗？</div>
+            <div class="modal-actions">
+                <span class="modal-hint">Esc 取消 · Enter 确定</span>
+                <button class="btn-secondary" id="modalCancelBtn">取消</button>
+                <button id="modalConfirmBtn">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑地图 -->
+    <div id="editModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box" style="max-width: 640px; max-height: 85vh; display:flex; flex-direction:column;">
+            <div class="modal-title">✏️ 编辑地图与桩点</div>
+            <div style="flex:1; overflow-y:auto; margin: 10px 0;">
+                <div class="form-group">
+                    <label for="editMapName">地图名称</label>
+                    <input type="text" id="editMapName">
+                </div>
+                <div class="form-group">
+                    <label for="editMapRawWords">桩点原始文本（每行一组，保存时会重新解析）</label>
+                    <textarea id="editMapRawWords" style="min-height: 200px;"></textarea>
+                </div>
+                <p style="font-size:0.72rem; color:var(--text-muted); line-height:1.5;">
+                    已标定的坐标与生疏标记<strong>按单词文本匹配</strong>迁移，因此增删行、调整顺序都不会错位；
+                    只有改写了单词本身时该行的图钉才会丢失。
+                </p>
+            </div>
+            <div class="modal-actions">
+                <span class="modal-hint">Esc 取消</span>
+                <button class="btn-secondary" id="editCancelBtn">取消</button>
+                <button id="editSaveBtn">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 0. 常量
+ * ========================================================== */
+const DB_NAME = 'MemoryPalaceDB';
+const DB_VERSION = 1;
+const STORE_IMAGES = 'map_images';
+const LS_META = 'memory_palace_hub_metadata_v2';
+const LS_V1 = 'memory_palace_hub_data';
+const LS_NOTIFIED = 'memory_palace_notified_stages';
+const LS_LAST_EXPORT = 'memory_palace_last_export_time';
+
+// 阶梯间隔（分钟）：20m · 1d · 2d · 4d · 7d · 15d · 30d
+const BASE_INTERVALS_MINUTES = [20, 1440, 2880, 5760, 10080, 21600, 43200];
+
+const FORGOT_RETRY_MINUTES = 10;   // 遗忘后重测间隔
+const UNDO_WINDOW_MS = 8000;       // 打分撤销窗口
+const FLAG_HARD_THRESHOLD = 0.20;  // 超过此比例生疏即不建议「清晰」
+const FLAG_FORGOT_THRESHOLD = 0.40;
+
+/* ============================================================
+ * 1. IndexedDB 图片存储
+ * ========================================================== */
+let dbInstance = null;
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) return reject(new Error('无 IndexedDB'));
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_IMAGES)) db.createObjectStore(STORE_IMAGES);
+        };
+        request.onsuccess = (e) => { dbInstance = e.target.result; resolve(dbInstance); };
+        request.onerror = (e) => reject(e);
+    });
+}
+
+function saveImageToDB(id, blob) {
+    return new Promise((resolve, reject) => {
+        if (!dbInstance) return reject(new Error('DB 未初始化'));
+        const tx = dbInstance.transaction(STORE_IMAGES, 'readwrite');
+        tx.objectStore(STORE_IMAGES).put(blob, id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e);
+        tx.onabort = (e) => reject(e);
+    });
+}
+
+function getImageFromDB(id) {
+    return new Promise((resolve) => {
+        if (!dbInstance) return resolve(null);
+        try {
+            const tx = dbInstance.transaction(STORE_IMAGES, 'readonly');
+            const req = tx.objectStore(STORE_IMAGES).get(id);
+            req.onsuccess = (e) => resolve(e.target.result || null);
+            req.onerror = () => resolve(null);
+        } catch (err) { resolve(null); }
+    });
+}
+
+function deleteImageFromDB(id) {
+    if (!dbInstance) return;
+    try {
+        const tx = dbInstance.transaction(STORE_IMAGES, 'readwrite');
+        tx.objectStore(STORE_IMAGES).delete(id);
+    } catch (err) { console.warn('删除图片失败', err); }
+}
+
+function dataURLtoBlob(dataurl) {
+    const arr = String(dataurl).split(',');
+    const m = arr[0].match(/:(.*?);/);
+    const mime = m ? m[1] : 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8 = new Uint8Array(n);
+    while (n--) u8[n] = bstr.charCodeAt(n);
+    return new Blob([u8], { type: mime });
+}
+
+function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+    });
+}
+
+/* ============================================================
+ * 2. 全局状态
+ * ========================================================== */
+const state = {
+    maps: [],
+    selectedMapId: null,
+    practiceMode: 'mask-word',      // mask-word | mask-cue | show-all
+    filterFlaggedOnly: false,
+    isPinningMode: false,
+    pinTargetIndex: null,
+    activeObjectUrl: null,
+    // 视口
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    startX: 0,
+    startY: 0,
+    userAdjustedView: false,
+    // 撤销
+    undoEntry: null,
+    undoTimer: null,
+    // 列表渲染缓存
+    lastListSignature: ''
+};
+
+const $ = (id) => document.getElementById(id);
+const currentMap = () => state.maps.find(m => m.id === state.selectedMapId) || null;
+
+function safeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function generateId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+}
+
+function formatMinutes(mins) {
+    if (mins < 60) return `${Math.round(mins)} 分钟`;
+    if (mins < 1440) return `${(mins / 60).toFixed(mins % 60 === 0 ? 0 : 1)} 小时`;
+    return `${(mins / 1440).toFixed(mins % 1440 === 0 ? 0 : 1)} 天`;
+}
+
+/* ============================================================
+ * 3. Toast（支持行动按钮，用于「撤销」）
+ * ========================================================== */
+const MAX_TOASTS = 3;
+
+function showToast(message, type = 'info', action = null, durationMs = 3200) {
+    const container = $('toastContainer');
+    // 封顶，避免连续操作时提示堆成一面墙盖住右侧面板
+    while (container.children.length >= MAX_TOASTS) container.firstElementChild.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+
+    let timer = null;
+    const dismiss = () => {
+        if (timer) clearTimeout(timer);
+        toast.style.transition = 'all 0.3s ease';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(110%)';
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    if (action && typeof action.onClick === 'function') {
+        const btn = document.createElement('button');
+        btn.className = 'toast-action';
+        btn.textContent = action.label || '撤销';
+        btn.addEventListener('click', () => { action.onClick(); dismiss(); });
+        toast.appendChild(btn);
+    }
+
+    container.appendChild(toast);
+    timer = setTimeout(dismiss, durationMs);
+    return dismiss;
+}
+
+/* ============================================================
+ * 4. 模态框（Esc / Enter 支持）
+ * ========================================================== */
+let modalResolver = null;
+
+function showConfirmModal(title, body, confirmLabel = '确定') {
+    $('modalTitle').textContent = title;
+    $('modalBody').textContent = body;
+    $('modalConfirmBtn').textContent = confirmLabel;
+    $('confirmModal').style.display = 'flex';
+    $('modalConfirmBtn').focus();
+    return new Promise((resolve) => { modalResolver = resolve; });
+}
+
+function closeConfirmModal(result) {
+    $('confirmModal').style.display = 'none';
+    const r = modalResolver;
+    modalResolver = null;
+    if (r) r(result);
+}
+
+function isModalOpen() {
+    return $('confirmModal').style.display === 'flex' || $('editModal').style.display === 'flex';
+}
+
+/* ============================================================
+ * 5. 持久化与 v1 迁移
+ * ========================================================== */
+async function loadMetadata() {
+    try {
+        const v1Str = localStorage.getItem(LS_V1);
+        if (v1Str) {
+            // ---- v1 → v2 无损迁移：图片转入 IndexedDB，随后删除 v1 键释放配额 ----
+            let migrated = 0;
+            try {
+                const v1List = JSON.parse(v1Str);
+                if (Array.isArray(v1List)) {
+                    for (const m of v1List) {
+                        const newId = m.id || generateId();
+                        let hasImg = false;
+                        if (m.imageData && String(m.imageData).startsWith('data:')) {
+                            try { await saveImageToDB(newId, dataURLtoBlob(m.imageData)); hasImg = true; }
+                            catch (e) { console.warn('v1 图片迁移失败', e); }
+                        }
+                        state.maps.push(normalizeMap({
+                            id: newId,
+                            name: m.name || '未命名地图',
+                            rawWords: m.words || '',
+                            parsedLoci: parseLoci(m.words || ''),
+                            stage: m.stage || 0,
+                            lastReviewed: m.lastReviewed || Date.now(),
+                            nextReviewTime: m.nextReviewTime || Date.now(),
+                            hasImage: hasImg
+                        }));
+                        migrated++;
+                    }
+                }
+            } catch (e) { console.error('v1 解析异常', e); }
+
+            persist();
+            localStorage.removeItem(LS_V1);
+            showToast(`已迁移 ${migrated} 座 v1 地图至 IndexedDB，并释放了旧版占用的存储配额。`, 'success', null, 5000);
+        } else {
+            const saved = localStorage.getItem(LS_META);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) state.maps = parsed.map(normalizeMap);
+            }
+        }
+    } catch (err) {
+        console.error('元数据读取失败', err);
+        showToast('元数据读取异常，已按空列表启动（原数据未被覆盖，请勿立即录入）。', 'error', null, 6000);
+        state.maps = [];
+    }
+
+    sortQueue();
+    renderMapList(true);
+    checkBackupNotice();
+    checkDueReviews();
+}
+
+// 保证旧版本记录补齐新字段
+function normalizeMap(m) {
+    const loci = Array.isArray(m.parsedLoci) ? m.parsedLoci : parseLoci(m.rawWords || m.words || '');
+    loci.forEach(l => {
+        if (typeof l.flagged !== 'boolean') l.flagged = false;
+        if (l.pinX === undefined) l.pinX = null;
+        if (l.pinY === undefined) l.pinY = null;
+        if (!l.lid) l.lid = generateId();
+    });
+    return {
+        id: m.id || generateId(),
+        name: m.name || '未命名地图',
+        rawWords: m.rawWords || m.words || '',
+        parsedLoci: loci,
+        stage: typeof m.stage === 'number' ? m.stage : 0,
+        lastReviewed: m.lastReviewed || Date.now(),
+        nextReviewTime: m.nextReviewTime || Date.now(),
+        hasImage: !!m.hasImage
+    };
+}
+
+// 只写盘，不触发排序/重绘
+function persist() {
+    try {
+        localStorage.setItem(LS_META, JSON.stringify(state.maps));
+        return true;
+    } catch (err) {
+        console.error('保存失败', err);
+        showToast('本地存储写入失败（可能配额已满）！请立即导出备份。', 'error', null, 8000);
+        return false;
+    }
+}
+
+function checkBackupNotice() {
+    const last = localStorage.getItem(LS_LAST_EXPORT);
+    const now = Date.now();
+    if (state.maps.length > 0 && (!last || (now - parseInt(last, 10)) > 7 * 24 * 3600 * 1000)) {
+        $('backupBanner').style.display = 'flex';
+    }
+}
+
+/* ============================================================
+ * 6. 桩点解析
+ * ========================================================== */
+function parseLoci(text) {
+    if (!text) return [];
+    return text.split('\n').map(l => l.trim()).filter(Boolean).map((line, idx) => {
+        let num = String(idx + 1).padStart(2, '0');
+        let word = line;
+        let cue = '';
+
+        const numMatch = line.match(/^(\d{1,3})[.、:：\s]\s*(.+)$/);
+        if (numMatch) { num = numMatch[1].padStart(2, '0'); word = numMatch[2].trim(); }
+
+        const bracket = word.match(/^([^(（]+)[(（](.+?)[)）]\s*$/);
+        if (bracket) {
+            word = bracket[1].trim();
+            cue = bracket[2].trim();
+        } else {
+            // 破折号必须两侧带空格，避免切坏 self-esteem / well-being
+            const split = word.match(/^(.+?)(?:\s+[—–-]\s+|[:：]\s*)(.+)$/);
+            if (split) { word = split[1].trim(); cue = split[2].trim(); }
+        }
+
+        return {
+            lid: generateId(),
+            num,
+            word,
+            cue: cue || '（未填写场景线索）',
+            flagged: false,
+            pinX: null,
+            pinY: null
+        };
+    });
+}
+
+// 编辑后按「单词文本」迁移坐标与标记 —— 增删行、调顺序都不会错位
+function mergeLociState(newList, oldList) {
+    const norm = (w) => String(w || '').toLowerCase().replace(/\s+/g, '');
+    const buckets = new Map();
+    (oldList || []).forEach(o => {
+        const k = norm(o.word);
+        if (!buckets.has(k)) buckets.set(k, []);
+        buckets.get(k).push(o);
+    });
+    newList.forEach(n => {
+        const b = buckets.get(norm(n.word));
+        if (b && b.length) {
+            const o = b.shift();
+            n.lid = o.lid;
+            n.pinX = o.pinX;
+            n.pinY = o.pinY;
+            n.flagged = !!o.flagged;
+        }
+    });
+    return newList;
+}
+
+/* ============================================================
+ * 7. 队列排序与列表渲染
+ * ========================================================== */
+function sortQueue() {
+    const now = Date.now();
+    state.maps.sort((a, b) => {
+        const aDue = a.nextReviewTime <= now;
+        const bDue = b.nextReviewTime <= now;
+        if (aDue !== bDue) return aDue ? -1 : 1;
+        return a.nextReviewTime - b.nextReviewTime;
+    });
+}
+
+function dueLabelFor(map, now) {
+    if (now < map.nextReviewTime) {
+        return '下次: ' + new Date(map.nextReviewTime)
+            .toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    const mins = Math.floor((now - map.nextReviewTime) / 60000);
+    if (mins < 60) return `⚠️ 待复习 (${Math.max(1, mins)} 分钟前)`;
+    if (mins < 1440) return `⚠️ 待复习 (${Math.floor(mins / 60)} 小时前)`;
+    return `⚠️ 逾期 ${Math.floor(mins / 1440)} 天`;
+}
+
+function listSignature(now) {
+    return state.maps.map(m =>
+        `${m.id}|${m.stage}|${dueLabelFor(m, now)}|${(m.parsedLoci || []).filter(l => l.flagged).length}`
+    ).join('¶') + '¶sel:' + state.selectedMapId;
+}
+
+function renderMapList(force = false) {
+    const listEl = $('mapList');
+    const now = Date.now();
+
+    const sig = listSignature(now);
+    if (!force && sig === state.lastListSignature) return;   // 无变化则不重建 DOM，避免列表在眼皮底下跳动
+    state.lastListSignature = sig;
+
+    const dueCount = state.maps.filter(m => m.nextReviewTime <= now).length;
+    $('queueCount').textContent = `${dueCount} 待复习 / 共 ${state.maps.length} 座`;
+
+    if (state.maps.length === 0) {
+        listEl.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:12px;">暂无地图，请在上方录入</p>';
+        return;
+    }
+
+    const savedScroll = listEl.scrollTop;   // 定时刷新时保持滚动位置
+
+    listEl.innerHTML = state.maps.map(map => {
+        const isDue = now >= map.nextReviewTime;
+        const isCompleted = map.stage >= BASE_INTERVALS_MINUTES.length;
+        const stageText = isCompleted ? '完全固化' : `第 ${map.stage + 1} 阶`;
+        const flaggedCount = (map.parsedLoci || []).filter(l => l.flagged).length;
+        const selected = state.selectedMapId === map.id;
+
+        return `
+            <div class="map-card ${selected ? 'active' : ''}"
+                 role="option"
+                 aria-selected="${selected ? 'true' : 'false'}"
+                 tabindex="0"
+                 data-id="${safeHtml(map.id)}">
+                <div class="map-card-title">
+                    <span title="${safeHtml(map.name)}">${safeHtml(map.name)}</span>
+                    <span style="flex-shrink:0;">
+                        ${flaggedCount > 0 ? `<span style="font-size:0.7rem; color:#f472b6;">🚩${flaggedCount}</span>` : ''}
+                        ${map.hasImage ? '<span style="font-size:0.72rem;">🖼️</span>' : ''}
+                    </span>
+                </div>
+                <div class="map-card-meta">
+                    <span>${dueLabelFor(map, now)}</span>
+                    <span class="stage-badge ${isDue ? 'due' : (isCompleted ? 'done' : '')}">${stageText}</span>
+                </div>
+            </div>`;
+    }).join('');
+
+    listEl.scrollTop = savedScroll;
+}
+
+$('mapList').addEventListener('click', (e) => {
+    const card = e.target.closest('.map-card');
+    if (card && card.dataset.id) selectMap(card.dataset.id);
+});
+
+$('mapList').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.map-card');
+    if (card && card.dataset.id) { e.preventDefault(); selectMap(card.dataset.id); }
+});
+
+/* ============================================================
+ * 8. 录入新地图
+ * ========================================================== */
+async function addNewMap() {
+    const name = $('mapName').value.trim();
+    const wordsText = $('mapWords').value.trim();
+    const fileInput = $('mapImage');
+
+    if (!name) { showToast('请填写地图名称！', 'warning'); return; }
+
+    const mapId = generateId();
+    const now = Date.now();
+    let hasImg = false;
+
+    if (fileInput.files && fileInput.files[0]) {
+        try { await saveImageToDB(mapId, fileInput.files[0]); hasImg = true; }
+        catch (e) { showToast('图片写入 IndexedDB 失败，地图仍会以无图模式保存。', 'error'); }
+    }
+
+    state.maps.push({
+        id: mapId,
+        name,
+        rawWords: wordsText,
+        parsedLoci: parseLoci(wordsText),
+        stage: 0,
+        lastReviewed: now,
+        nextReviewTime: now + BASE_INTERVALS_MINUTES[0] * 60000,
+        hasImage: hasImg
+    });
+
+    persist();
+    sortQueue();
+    renderMapList(true);
+
+    $('mapName').value = '';
+    $('mapWords').value = '';
+    fileInput.value = '';
+
+    showToast(`已录入【${name}】，首轮提取定于 20 分钟后。`, 'success');
+    selectMap(mapId);
+}
+
+/* ============================================================
+ * 9. 选中地图
+ * ========================================================== */
+async function selectMap(id) {
+    state.selectedMapId = id;
+    renderMapList(true);
+
+    const map = currentMap();
+    if (!map) return;
+
+    $('currentMapTitle').textContent = map.name;
+    updateMetaDisplay(map);
+    $('reviewHeaderActions').style.display = 'flex';
+    $('recallFeedbackBar').style.display = 'flex';
+
+    const wrapper = $('imageTransformWrapper');
+    const imgEl = $('activeMapImage');
+    const placeholder = $('emptyMapPlaceholder');
+
+    if (state.activeObjectUrl) {
+        URL.revokeObjectURL(state.activeObjectUrl);
+        state.activeObjectUrl = null;
+    }
+
+    state.userAdjustedView = false;
+
+    if (map.hasImage) {
+        const blob = await getImageFromDB(map.id);
+        // 用户可能在 await 期间切走了
+        if (state.selectedMapId !== id) return;
+        if (blob) {
+            state.activeObjectUrl = URL.createObjectURL(blob);
+            imgEl.onload = () => { fitToView(); renderPinsOnMap(); };
+            imgEl.src = state.activeObjectUrl;
+            wrapper.style.display = 'inline-block';
+            placeholder.style.display = 'none';
+        } else {
+            wrapper.style.display = 'none';
+            placeholder.textContent = '🖼️ 图像在数据库中未找到（可能来自仅含元数据的备份）';
+            placeholder.style.display = 'flex';
+        }
+    } else {
+        wrapper.style.display = 'none';
+        placeholder.textContent = '🗺️ 本座地图未附加实景图';
+        placeholder.style.display = 'flex';
+        resetTransform();
+    }
+
+    renderLociList();
+    updateReviewControls(map);
+}
+
+function updateMetaDisplay(map) {
+    const done = map.stage >= BASE_INTERVALS_MINUTES.length;
+    $('currentMapMeta').textContent = done
+        ? `已完全固化（每 30 天巡检）｜下次：${new Date(map.nextReviewTime).toLocaleString()}`
+        : `第 ${map.stage + 1} 阶 ｜ 计划复习：${new Date(map.nextReviewTime).toLocaleString()}`;
+}
+
+/* ============================================================
+ * 10. 生疏比例 → 建议档位 / 按钮状态
+ * ========================================================== */
+function flagStats(map) {
+    const total = (map.parsedLoci || []).length;
+    const flagged = (map.parsedLoci || []).filter(l => l.flagged).length;
+    return { total, flagged, ratio: total ? flagged / total : 0 };
+}
+
+function recommendedRating(map) {
+    const { total, ratio } = flagStats(map);
+    if (total === 0) return 'easy';
+    if (ratio === 0) return 'easy';
+    if (ratio > FLAG_FORGOT_THRESHOLD) return 'forgot';
+    return 'hard';
+}
+
+function updateReviewControls(map) {
+    const now = Date.now();
+    const isDue = now >= map.nextReviewTime;
+    const { flagged, total, ratio } = flagStats(map);
+
+    $('flagStatsText').textContent = total
+        ? `${flagged} / ${total} 标记生疏`
+        : '无桩点';
+
+    // 建议档位高亮
+    const rec = recommendedRating(map);
+    [['forgot', 'btnForgot'], ['hard', 'btnHard'], ['easy', 'btnEasy']].forEach(([r, id]) => {
+        $(id).classList.toggle('recommended', r === rec);
+    });
+
+    const notice = $('earlyReviewNotice');
+    if (!isDue) {
+        const mins = Math.max(1, Math.round((map.nextReviewTime - now) / 60000));
+        notice.textContent = `⏳ 距计划复习还有 ${formatMinutes(mins)}。「清晰」不会提前推进阶梯；若发现遗忘，仍可按「遗忘 / 模糊」把日程提前。`;
+        notice.style.display = 'block';
+    } else if (ratio > FLAG_HARD_THRESHOLD) {
+        notice.textContent = `🚩 生疏比例 ${(ratio * 100).toFixed(0)}%，已高于 ${FLAG_HARD_THRESHOLD * 100}%，建议不要评为「清晰」。`;
+        notice.style.display = 'block';
+    } else {
+        notice.style.display = 'none';
+    }
+}
+
+/* ============================================================
+ * 11. 练习列表渲染（全事件委托，不在属性里拼数据）
+ * ========================================================== */
+function renderLociList() {
+    const map = currentMap();
+    const container = $('lociScroll');
+
+    if (!map || !map.parsedLoci || map.parsedLoci.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:16px;">未解析到桩点列表，可点击「编辑」补充。</p>';
+        renderPinsOnMap();
+        return;
+    }
+
+    // 带上原始索引，避免 indexOf 的 O(n²)
+    let entries = map.parsedLoci.map((item, idx) => ({ item, idx }));
+    if (state.filterFlaggedOnly) entries = entries.filter(e => e.item.flagged);
+
+    if (entries.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:16px;">当前没有标记为生疏的桩点 🎉</p>';
+        renderPinsOnMap();
+        return;
+    }
+
+    const isMaskWord = state.practiceMode === 'mask-word';
+    const isMaskCue = state.practiceMode === 'mask-cue';
+
+    container.innerHTML = entries.map(({ item, idx }) => {
+        const hasPin = item.pinX !== null && item.pinY !== null;
+        const isTarget = state.isPinningMode && state.pinTargetIndex === idx;
+
+        const wordHtml = isMaskWord
+            ? `<span class="mask-block masked-word" data-reveal="word">👁️ 点击揭示单词</span>`
+            : `<span class="mask-block revealed-word">${safeHtml(item.word)}</span>`;
+
+        const cueHtml = isMaskCue
+            ? `<div class="loci-desc-box masked-cue" data-reveal="cue">🔍 点击揭示场景线索</div>`
+            : `<div class="loci-desc-box">${safeHtml(item.cue)}</div>`;
+
+        return `
+            <div class="loci-card ${item.flagged ? 'flagged' : ''} ${isTarget ? 'pin-target' : ''}"
+                 id="lociCard_${idx}" data-idx="${idx}">
+                <div class="loci-header">
+                    <span class="loci-num">${safeHtml(item.num)}${hasPin ? ' 📍' : ''}</span>
+                    <span class="loci-actions">
+                        ${hasPin ? '<button class="clear-pin-btn" data-act="clear-pin" title="清除该桩点的地图坐标">✖ 清除坐标</button>' : ''}
+                        <button class="flag-toggle-btn ${item.flagged ? 'active' : ''}" data-act="flag" title="标记为生疏">
+                            ${item.flagged ? '🚩 已标记' : '⚐ 标为生疏'}
+                        </button>
+                    </span>
+                </div>
+                <div style="margin-bottom:4px;">${wordHtml}</div>
+                ${cueHtml}
+            </div>`;
+    }).join('');
+
+    const m = currentMap();
+    if (m) updateReviewControls(m);
+    renderPinsOnMap();
+}
+
+// ---- 事件委托：揭示 / 标记 / 清除坐标 / 选中 ----
+$('lociScroll').addEventListener('click', (e) => {
+    const card = e.target.closest('.loci-card');
+    if (!card) return;
+    const idx = parseInt(card.dataset.idx, 10);
+    const map = currentMap();
+    if (!map || !map.parsedLoci[idx]) return;
+
+    const actionEl = e.target.closest('[data-act]');
+    if (actionEl) {
+        if (actionEl.dataset.act === 'flag') toggleLociFlag(idx);
+        else if (actionEl.dataset.act === 'clear-pin') clearPin(idx);
+        return;
+    }
+
+    const revealEl = e.target.closest('[data-reveal]');
+    if (revealEl) {
+        // 文本直接来自 state，用 textContent 写入 —— 不存在任何引号/转义问题
+        const item = map.parsedLoci[idx];
+        if (revealEl.dataset.reveal === 'word') {
+            revealEl.className = 'mask-block revealed-word';
+            revealEl.textContent = item.word;
+        } else {
+            revealEl.className = 'loci-desc-box';
+            revealEl.textContent = item.cue;
+        }
+        revealEl.removeAttribute('data-reveal');
+        return;
+    }
+
+    if (state.isPinningMode) {
+        // 选中态由卡片高亮 + 地图上脉冲图钉表达，不再弹 toast（否则连续标定会刷屏）
+        state.pinTargetIndex = idx;
+        renderLociList();
+        renderPinsOnMap();
+    } else {
+        highlightPin(idx);
+    }
+});
+
+$('lociScroll').addEventListener('mouseover', (e) => {
+    const card = e.target.closest('.loci-card');
+    if (card) highlightPin(parseInt(card.dataset.idx, 10));
+});
+$('lociScroll').addEventListener('mouseout', (e) => {
+    const card = e.target.closest('.loci-card');
+    if (card) unhighlightPin(parseInt(card.dataset.idx, 10));
+});
+
+function toggleLociFlag(index) {
+    const map = currentMap();
+    if (!map || !map.parsedLoci[index]) return;
+    map.parsedLoci[index].flagged = !map.parsedLoci[index].flagged;
+    persist();
+    renderLociList();
+    renderMapList();
+}
+
+function clearPin(index) {
+    const map = currentMap();
+    if (!map || !map.parsedLoci[index]) return;
+    map.parsedLoci[index].pinX = null;
+    map.parsedLoci[index].pinY = null;
+    persist();
+    renderLociList();
+    showToast(`已清除桩点 ${map.parsedLoci[index].num} 的坐标。`, 'info', null, 2000);
+}
+
+function setPracticeMode(mode) {
+    state.practiceMode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    renderLociList();
+}
+
+function toggleFilterFlagged() {
+    state.filterFlaggedOnly = !state.filterFlaggedOnly;
+    $('filterFlagBtn').classList.toggle('active', state.filterFlaggedOnly);
+    renderLociList();
+}
+
+/* ============================================================
+ * 12. 打分：三档 + 生疏比例参与 + 逾期补偿 + 撤销
+ * ========================================================== */
+function snapshotForUndo(map) {
+    return {
+        mapId: map.id,
+        stage: map.stage,
+        lastReviewed: map.lastReviewed,
+        nextReviewTime: map.nextReviewTime,
+        flags: (map.parsedLoci || []).map(l => !!l.flagged)
+    };
+}
+
+function applyUndo(snap) {
+    const map = state.maps.find(m => m.id === snap.mapId);
+    if (!map) return;
+    map.stage = snap.stage;
+    map.lastReviewed = snap.lastReviewed;
+    map.nextReviewTime = snap.nextReviewTime;
+    (map.parsedLoci || []).forEach((l, i) => {
+        if (i < snap.flags.length) l.flagged = snap.flags[i];
+    });
+    persist();
+    sortQueue();
+    renderMapList(true);
+    if (state.selectedMapId === map.id) {
+        updateMetaDisplay(map);
+        renderLociList();
+        updateReviewControls(map);
+    }
+    showToast('已撤销上一次评分。', 'success', null, 2200);
+}
+
+async function submitReviewFeedback(rating) {
+    const map = currentMap();
+    if (!map) return;
+
+    const now = Date.now();
+    const isDue = now >= map.nextReviewTime;
+    const { ratio, flagged, total } = flagStats(map);
+
+    // 提前复习：只有「清晰」被拦（防刷分）；遗忘/模糊可以把日程提前
+    if (!isDue && rating === 'easy') {
+        map.lastReviewed = now;
+        persist();
+        updateMetaDisplay(map);
+        showToast('已记录提前演练。未到期的「清晰」不推进阶梯，计划时间保持不变。', 'info', null, 4000);
+        return;
+    }
+
+    // 生疏比例过高时确认一次
+    if (rating === 'easy' && ratio > FLAG_HARD_THRESHOLD) {
+        const ok = await showConfirmModal(
+            '确认评为「清晰」？',
+            `本图有 ${flagged} / ${total} 个桩点标记为生疏（${(ratio * 100).toFixed(0)}%），高于 ${FLAG_HARD_THRESHOLD * 100}% 的建议阈值。\n\n` +
+            `评为「清晰」会推进阶梯并清空全部生疏标记。建议改选「模糊」。`,
+            '仍然评为清晰'
+        );
+        if (!ok) return;
+    }
+
+    const snap = snapshotForUndo(map);
+    const overdueDays = Math.max(0, (now - map.nextReviewTime) / 86400000);
+    map.lastReviewed = now;
+
+    let msg = '';
+
+    if (rating === 'forgot') {
+        map.stage = 0;
+        map.nextReviewTime = now + FORGOT_RETRY_MINUTES * 60000;
+        msg = `已重置至第 1 阶，${FORGOT_RETRY_MINUTES} 分钟后重新提取。`;
+
+    } else if (rating === 'hard') {
+        // 基准：第 0 阶 20 分钟；更高阶取原步长一半。再按生疏比例进一步缩短（最多减半）。
+        let base = map.stage > 0
+            ? Math.max(20, Math.floor(BASE_INTERVALS_MINUTES[Math.min(map.stage, BASE_INTERVALS_MINUTES.length - 1)] * 0.5))
+            : 20;
+        const mins = Math.max(10, Math.round(base * (1 - 0.5 * ratio)));
+        map.nextReviewTime = now + mins * 60000;
+        msg = ratio > 0
+            ? `阶梯维持第 ${map.stage + 1} 阶；按 ${(ratio * 100).toFixed(0)}% 生疏率收紧至 ${formatMinutes(mins)} 后复习。`
+            : `阶梯维持第 ${map.stage + 1} 阶，${formatMinutes(mins)} 后强化提取。`;
+
+    } else if (rating === 'easy') {
+        map.stage += 1;
+        let mins = map.stage < BASE_INTERVALS_MINUTES.length
+            ? BASE_INTERVALS_MINUTES[map.stage]
+            : 43200;
+
+        // 逾期补偿：逾期越久仍记得清，说明记忆越稳固，间隔额外放大（上限 +50%）
+        if (overdueDays > 0) {
+            const expectedDays = Math.max(1, mins / 1440);
+            const bonus = Math.min(0.5, (overdueDays / expectedDays) * 0.5);
+            mins = Math.round(mins * (1 + bonus));
+        }
+
+        map.nextReviewTime = now + mins * 60000;
+
+        // 评为清晰 = 本轮全部记住 → 清空生疏标记（可撤销）
+        let cleared = 0;
+        (map.parsedLoci || []).forEach(l => { if (l.flagged) { l.flagged = false; cleared++; } });
+
+        msg = `晋级第 ${map.stage + 1} 阶，下次复习在 ${formatMinutes(mins)} 后。` +
+              (cleared ? ` 已清空 ${cleared} 个生疏标记。` : '');
+    }
+
+    persist();
+    renderMapList();
+    updateMetaDisplay(map);
+    renderLociList();
+    updateReviewControls(map);
+
+    // 撤销窗口
+    if (state.undoTimer) clearTimeout(state.undoTimer);
+    state.undoEntry = snap;
+    state.undoTimer = setTimeout(() => { state.undoEntry = null; }, UNDO_WINDOW_MS);
+
+    showToast(msg, rating === 'easy' ? 'success' : (rating === 'hard' ? 'info' : 'warning'), {
+        label: '↩ 撤销',
+        onClick: () => { if (state.undoEntry) { applyUndo(state.undoEntry); state.undoEntry = null; } }
+    }, UNDO_WINDOW_MS);
+}
+
+/* ============================================================
+ * 13. 全局快捷键（严格防误触）
+ * ========================================================== */
+window.addEventListener('keydown', (e) => {
+    // Esc 永远优先关闭模态框
+    if (e.key === 'Escape') {
+        if ($('editModal').style.display === 'flex') { closeEditModal(false); return; }
+        if ($('confirmModal').style.display === 'flex') { closeConfirmModal(false); return; }
+        if (state.isPinningMode) { togglePinningMode(); return; }
+        return;
+    }
+
+    if ($('confirmModal').style.display === 'flex') {
+        if (e.key === 'Enter') { e.preventDefault(); closeConfirmModal(true); }
+        return;
+    }
+
+    // ① 带修饰键的组合（Cmd+1 / Ctrl+1 切标签页等）绝不触发打分
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // ② 模态框打开时不打分
+    if (isModalOpen()) return;
+    // ③ 焦点在输入控件里不打分
+    const ae = document.activeElement;
+    const tag = ae && ae.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (ae && ae.isContentEditable)) return;
+    // ④ 没有选中地图不打分
+    if (!state.selectedMapId) return;
+
+    if (e.key === '1') { e.preventDefault(); submitReviewFeedback('forgot'); }
+    else if (e.key === '2') { e.preventDefault(); submitReviewFeedback('hard'); }
+    else if (e.key === '3') { e.preventDefault(); submitReviewFeedback('easy'); }
+});
+
+/* ============================================================
+ * 14. 标定与图钉
+ * ========================================================== */
+function togglePinningMode() {
+    state.isPinningMode = !state.isPinningMode;
+    const btn = $('pinModeBtn');
+    const container = $('canvasContainer');
+
+    if (state.isPinningMode) {
+        btn.textContent = '✖ 退出标定 (Esc)';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-warning');
+        container.classList.add('pinning-mode');
+        const map = currentMap();
+        if (map && map.parsedLoci.length) {
+            const unpinned = map.parsedLoci.findIndex(l => l.pinX === null);
+            state.pinTargetIndex = unpinned >= 0 ? unpinned : 0;
+        }
+        showToast('标定模式：左侧点选桩点 → 地图上点击落点。标定后焦点停在当前桩点，不会跳号。', 'info', null, 4500);
+    } else {
+        btn.textContent = '📍 标定桩点坐标';
+        btn.classList.add('btn-secondary');
+        btn.classList.remove('btn-warning');
+        container.classList.remove('pinning-mode');
+        state.pinTargetIndex = null;
+    }
+    renderLociList();
+}
+
+$('imageTransformWrapper').addEventListener('click', (e) => {
+    if (!state.isPinningMode || state.pinTargetIndex === null) return;
+    const img = $('activeMapImage');
+    const map = currentMap();
+    if (!img || !map || !map.parsedLoci[state.pinTargetIndex]) return;
+
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    if (x < 0 || x > 100 || y < 0 || y > 100) return;
+
+    const item = map.parsedLoci[state.pinTargetIndex];
+    item.pinX = parseFloat(x.toFixed(2));
+    item.pinY = parseFloat(y.toFixed(2));
+    persist();
+    renderLociList();
+    showToast(`桩点 ${item.num} 已标定`, 'success', null, 1200);
+});
+
+function renderPinsOnMap() {
+    const layer = $('pinsLayer');
+    layer.innerHTML = '';
+    const map = currentMap();
+    if (!map || !map.hasImage) return;
+
+    map.parsedLoci.forEach((item, idx) => {
+        if (item.pinX === null || item.pinY === null) return;
+        const pin = document.createElement('div');
+        pin.className = 'map-pin'
+            + (item.flagged ? ' flagged' : '')
+            + (state.isPinningMode && state.pinTargetIndex === idx ? ' target' : '');
+        pin.id = `pin_${idx}`;
+        pin.textContent = item.num;
+        pin.style.left = item.pinX + '%';
+        pin.style.top = item.pinY + '%';
+        pin.title = item.word;
+        // 点图钉不应顺带开始拖拽画布
+        pin.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        pin.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            scrollLociIntoView(idx);
+        });
+        layer.appendChild(pin);
+    });
+}
+
+function highlightPin(index) {
+    document.querySelectorAll('.map-pin.active').forEach(p => p.classList.remove('active'));
+    const pin = $(`pin_${index}`);
+    if (pin) pin.classList.add('active');
+}
+
+function unhighlightPin(index) {
+    const pin = $(`pin_${index}`);
+    if (pin) pin.classList.remove('active');
+}
+
+function scrollLociIntoView(index) {
+    if (state.filterFlaggedOnly) {
+        const map = currentMap();
+        if (map && map.parsedLoci[index] && !map.parsedLoci[index].flagged) {
+            showToast('该桩点未标记生疏，已为你退出「仅看生疏」筛选。', 'info', null, 2200);
+            toggleFilterFlagged();
+        }
+    }
+    const card = $(`lociCard_${index}`);
+    if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        card.classList.add('highlight');
+        setTimeout(() => card.classList.remove('highlight'), 1100);
+    }
+    highlightPin(index);
+}
+
+/* ============================================================
+ * 15. 视口：适应窗口 / 光标锚定缩放 / 拖拽
+ *    wrapper 绝对定位于 (0,0)，transform-origin 与容器原点重合，
+ *    因此 zoomAtPoint 的数学是精确的（v3 的 flex 居中会引入偏移）。
+ * ========================================================== */
+const canvasContainer = $('canvasContainer');
+const transformWrapper = $('imageTransformWrapper');
+const pinsLayerEl = $('pinsLayer');
+
+function updateTransform(animate = false) {
+    transformWrapper.style.transition = animate ? 'transform 0.15s ease-out' : 'none';
+    transformWrapper.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+    // 图钉反向缩放，保持恒定视觉大小
+    pinsLayerEl.style.setProperty('--pin-scale', (1 / state.zoom).toFixed(4));
+    $('zoomReadout').textContent = Math.round(state.zoom * 100) + '%';
+}
+
+function resetTransform() {
+    state.zoom = 1; state.panX = 0; state.panY = 0;
+    updateTransform(false);
+}
+
+function fitToView(animate = false) {
+    const img = $('activeMapImage');
+    if (!img || !img.naturalWidth) { resetTransform(); return; }
+    const cw = canvasContainer.clientWidth;
+    const ch = canvasContainer.clientHeight;
+    if (!cw || !ch) return;
+
+    const fit = Math.min(cw / img.naturalWidth, ch / img.naturalHeight, 1);
+    state.zoom = fit;
+    state.panX = (cw - img.naturalWidth * fit) / 2;
+    state.panY = (ch - img.naturalHeight * fit) / 2;
+    state.userAdjustedView = false;
+    updateTransform(animate);
+}
+
+function zoomAtPoint(factor, px, py) {
+    const newZoom = Math.max(0.05, Math.min(8, state.zoom * factor));
+    if (Math.abs(newZoom - state.zoom) < 1e-6) return;
+    // 保持 (px,py) 处的图像内容不动
+    state.panX = px - (px - state.panX) * (newZoom / state.zoom);
+    state.panY = py - (py - state.panY) * (newZoom / state.zoom);
+    state.zoom = newZoom;
+    state.userAdjustedView = true;
+    updateTransform(true);
+}
+
+function zoomCenter(factor) {
+    zoomAtPoint(factor, canvasContainer.clientWidth / 2, canvasContainer.clientHeight / 2);
+}
+
+canvasContainer.addEventListener('wheel', (e) => {
+    if ($('imageTransformWrapper').style.display === 'none') return;
+    e.preventDefault();
+    const rect = canvasContainer.getBoundingClientRect();
+    zoomAtPoint(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - rect.left, e.clientY - rect.top);
+}, { passive: false });
+
+canvasContainer.addEventListener('mousedown', (e) => {
+    if (state.isPinningMode) return;
+    if (e.button !== 0) return;
+    state.isPanning = true;
+    state.startX = e.clientX - state.panX;
+    state.startY = e.clientY - state.panY;
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!state.isPanning) return;
+    state.panX = e.clientX - state.startX;
+    state.panY = e.clientY - state.startY;
+    state.userAdjustedView = true;
+    updateTransform(false);   // 拖拽期间关闭过渡，避免橡皮筋感
+});
+
+window.addEventListener('mouseup', () => { state.isPanning = false; });
+
+window.addEventListener('resize', () => {
+    if (!state.userAdjustedView) fitToView(false);
+});
+
+/* ============================================================
+ * 16. 编辑地图
+ * ========================================================== */
+function openEditModal() {
+    const map = currentMap();
+    if (!map) return;
+    $('editMapName').value = map.name;
+    $('editMapRawWords').value = map.rawWords || '';
+    $('editModal').style.display = 'flex';
+    $('editMapName').focus();
+}
+
+function closeEditModal(save) {
+    if (save) {
+        const map = currentMap();
+        if (map) {
+            const newName = $('editMapName').value.trim();
+            const newWords = $('editMapRawWords').value.trim();
+            if (newName) map.name = newName;
+            map.rawWords = newWords;
+            map.parsedLoci = mergeLociState(parseLoci(newWords), map.parsedLoci);
+            persist();
+            $('currentMapTitle').textContent = map.name;
+            renderMapList(true);
+            renderLociList();
+            updateReviewControls(map);
+            showToast('地图与桩点已更新，坐标按单词文本迁移完成。', 'success');
+        }
+    }
+    $('editModal').style.display = 'none';
+}
+
+/* ============================================================
+ * 17. 删除地图
+ * ========================================================== */
+async function confirmDeleteCurrentMap() {
+    const map = currentMap();
+    if (!map) return;
+
+    const ok = await showConfirmModal(
+        '删除确认',
+        `确定要彻底删除【${map.name}】及其全部桩点坐标与图片吗？\n此操作不可撤销。`,
+        '删除'
+    );
+    if (!ok) return;
+
+    deleteImageFromDB(map.id);
+    if (state.activeObjectUrl) { URL.revokeObjectURL(state.activeObjectUrl); state.activeObjectUrl = null; }
+
+    state.maps = state.maps.filter(m => m.id !== map.id);
+    state.selectedMapId = null;
+    persist();
+    sortQueue();
+    renderMapList(true);
+
+    $('currentMapTitle').textContent = '请选择左侧地图开始复习';
+    $('currentMapMeta').textContent = '自适应间隔记忆系统 (Adaptive Spaced Repetition)';
+    $('reviewHeaderActions').style.display = 'none';
+    $('recallFeedbackBar').style.display = 'none';
+    $('imageTransformWrapper').style.display = 'none';
+    $('emptyMapPlaceholder').textContent = '🗺️ 请在左侧选择或录入地图';
+    $('emptyMapPlaceholder').style.display = 'flex';
+    $('lociScroll').innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; margin-top:20px;">请先选定一座地图</p>';
+
+    showToast('地图已删除。', 'info');
+}
+
+/* ============================================================
+ * 18. 到期检查与桌面通知
+ * ========================================================== */
+function getNotifiedSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(LS_NOTIFIED) || '[]')); }
+    catch (e) { return new Set(); }
+}
+
+function saveNotifiedSet(set) {
+    try {
+        // 只保留现存地图的键，避免无限膨胀
+        const alive = new Set(state.maps.map(m => m.id));
+        const trimmed = Array.from(set).filter(k => alive.has(String(k).split('_stage_')[0]));
+        localStorage.setItem(LS_NOTIFIED, JSON.stringify(trimmed));
+    } catch (e) { /* 忽略 */ }
+}
+
+function checkDueReviews() {
+    const supported = ('Notification' in window);
+    const now = Date.now();
+    const dueMaps = state.maps.filter(m => now >= m.nextReviewTime);
+
+    if (dueMaps.length > 0) {
+        const notified = getNotifiedSet();
+        let changed = false;
+        dueMaps.forEach(m => {
+            const key = `${m.id}_stage_${m.stage}`;
+            if (notified.has(key)) return;
+            notified.add(key);
+            changed = true;
+            if (supported && Notification.permission === 'granted') {
+                try {
+                    new Notification('🏛️ 记忆宫殿复习提醒', {
+                        body: `【${m.name}】已到第 ${m.stage + 1} 阶提取节点，开始 3 分钟脑内漫游。`,
+                        tag: key
+                    });
+                } catch (e) { console.warn('通知发送失败', e); }
+            }
+        });
+        if (changed) saveNotifiedSet(notified);
+    }
+
+    // 标题栏角标，页面被切到后台也能看到
+    document.title = (dueMaps.length ? `(${dueMaps.length}) ` : '') + '记忆宫殿智能复习中枢 v4.0';
+
+    sortQueue();
+    renderMapList();   // 有签名比对，无变化时不重建 DOM
+    const cur = currentMap();
+    if (cur) updateReviewControls(cur);
+}
+
+function requestNotificationPermission() {
+    if (!('Notification' in window)) {
+        showToast('当前环境不支持 Notification API（file:// 打开时常见）。建议用本地 http 端口运行。', 'warning', null, 5000);
+        return;
+    }
+    Notification.requestPermission().then(p => {
+        if (p === 'granted') {
+            showToast('桌面通知已开启。注意：仅在本页面打开时才会发送。', 'success', null, 4000);
+            $('notifyBtn').textContent = '🔔 通知已开启';
+        } else {
+            showToast('未获通知权限，将通过列表红标与标题栏角标提示。', 'info');
+        }
+    });
+}
+
+/* ============================================================
+ * 19. 备份导出 / 合并导入
+ * ========================================================== */
+function downloadBlob(obj, filename) {
+    // 用 Blob + objectURL，而非 data: URI —— 含图备份可达数十 MB，data: 会被浏览器截断
+    const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function exportData(includeImages) {
+    showToast(includeImages ? '正在读取 IndexedDB 图像并打包…' : '正在导出元数据…', 'info', null, 2000);
+
+    const maps = [];
+    let imgOk = 0, imgFail = 0;
+
+    for (const map of state.maps) {
+        const copy = { ...map };
+        if (includeImages && map.hasImage) {
+            try {
+                const blob = await getImageFromDB(map.id);
+                if (blob) { copy.imageData = await blobToDataURL(blob); imgOk++; }
+                else imgFail++;
+            } catch (e) { imgFail++; console.warn('图片导出失败', map.id, e); }
+        }
+        maps.push(copy);
+    }
+
+    downloadBlob({
+        version: '4.0',
+        includeImages: !!includeImages,
+        exportedAt: new Date().toISOString(),
+        maps
+    }, `memory_palace_backup_${includeImages ? 'full' : 'meta'}_${new Date().toISOString().slice(0, 10)}.json`);
+
+    localStorage.setItem(LS_LAST_EXPORT, Date.now().toString());
+    $('backupBanner').style.display = 'none';
+
+    if (includeImages) {
+        showToast(imgFail
+            ? `备份已下载：${imgOk} 张图片打包成功，${imgFail} 张未找到。`
+            : `完整备份已下载（含 ${imgOk} 张图片），换设备导入可无损还原。`,
+            imgFail ? 'warning' : 'success', null, 5000);
+    } else {
+        showToast('元数据备份已下载（不含图片）。', 'success');
+    }
+}
+
+async function handleImportFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+
+    let parsed;
+    try {
+        parsed = JSON.parse(await file.text());
+    } catch (err) {
+        showToast('导入失败：JSON 解析错误。', 'error');
+        return;
+    }
+
+    const incoming = Array.isArray(parsed) ? parsed
+        : (parsed && Array.isArray(parsed.maps) ? parsed.maps : null);
+    if (!incoming) { showToast('导入失败：无法识别的数据结构。', 'error'); return; }
+
+    const valid = incoming.filter(m => m && typeof m.name === 'string');
+    if (valid.length === 0) { showToast('文件中没有有效的地图记录。', 'error'); return; }
+
+    // 先分类再确认，让用户知道到底会发生什么
+    const byId = new Map(state.maps.map(m => [m.id, m]));
+    let nAdd = 0, nUpdate = 0, nSkip = 0;
+    valid.forEach(im => {
+        const ex = im.id ? byId.get(im.id) : null;
+        if (!ex) nAdd++;
+        else if ((im.lastReviewed || 0) >= (ex.lastReviewed || 0)) nUpdate++;
+        else nSkip++;
+    });
+
+    const hasImgs = valid.some(m => m.imageData);
+    const ok = await showConfirmModal(
+        '导入合并确认',
+        `文件中有 ${valid.length} 座地图${hasImgs ? '（含图片）' : ''}。\n\n` +
+        `· 新增 ${nAdd} 座\n` +
+        `· 覆盖 ${nUpdate} 座（备份版本更新或同时）\n` +
+        `· 跳过 ${nSkip} 座（本地版本更新，保留本地）\n\n` +
+        `现有的其他地图不受影响。`,
+        '开始导入'
+    );
+    if (!ok) return;
+
+    let added = 0, updated = 0, skipped = 0;
+
+    for (const im of valid) {
+        const targetId = im.id || generateId();
+        const existing = byId.get(targetId);
+
+        // 本地更新 → 保留本地，避免旧备份盖掉新进度
+        if (existing && (im.lastReviewed || 0) < (existing.lastReviewed || 0)) { skipped++; continue; }
+
+        let hasImg = !!im.hasImage;
+        if (im.imageData && String(im.imageData).startsWith('data:')) {
+            try { await saveImageToDB(targetId, dataURLtoBlob(im.imageData)); hasImg = true; }
+            catch (e) { console.warn('导入图片写入失败', e); }
+        }
+
+        const sanitized = normalizeMap({
+            id: targetId,
+            name: im.name,
+            rawWords: im.rawWords || im.words || '',
+            parsedLoci: im.parsedLoci,
+            stage: im.stage,
+            lastReviewed: im.lastReviewed,
+            nextReviewTime: im.nextReviewTime,
+            hasImage: hasImg
+        });
+
+        if (existing) {
+            state.maps[state.maps.findIndex(m => m.id === targetId)] = sanitized;
+            updated++;
+        } else {
+            state.maps.push(sanitized);
+            byId.set(targetId, sanitized);
+            added++;
+        }
+    }
+
+    persist();
+    sortQueue();
+    renderMapList(true);
+    showToast(`导入完成：新增 ${added}、覆盖 ${updated}、跳过 ${skipped}。`, 'success', null, 5000);
+}
+
+/* ============================================================
+ * 20. 事件绑定与启动
+ * ========================================================== */
+$('addMapBtn').addEventListener('click', addNewMap);
+$('editMapBtn').addEventListener('click', openEditModal);
+$('pinModeBtn').addEventListener('click', togglePinningMode);
+$('deleteMapBtn').addEventListener('click', confirmDeleteCurrentMap);
+
+$('zoomInBtn').addEventListener('click', () => zoomCenter(1.25));
+$('zoomOutBtn').addEventListener('click', () => zoomCenter(1 / 1.25));
+$('fitViewBtn').addEventListener('click', () => fitToView(true));
+
+document.querySelectorAll('.mode-btn').forEach(b =>
+    b.addEventListener('click', () => setPracticeMode(b.dataset.mode)));
+$('filterFlagBtn').addEventListener('click', toggleFilterFlagged);
+
+document.querySelectorAll('.recall-btn-group button').forEach(b =>
+    b.addEventListener('click', () => submitReviewFeedback(b.dataset.rating)));
+
+$('modalCancelBtn').addEventListener('click', () => closeConfirmModal(false));
+$('modalConfirmBtn').addEventListener('click', () => closeConfirmModal(true));
+$('confirmModal').addEventListener('mousedown', (e) => {
+    if (e.target === $('confirmModal')) closeConfirmModal(false);
+});
+
+$('editCancelBtn').addEventListener('click', () => closeEditModal(false));
+$('editSaveBtn').addEventListener('click', () => closeEditModal(true));
+
+$('notifyBtn').addEventListener('click', requestNotificationPermission);
+$('exportFullBtn').addEventListener('click', () => exportData(true));
+$('exportMetaBtn').addEventListener('click', () => exportData(false));
+$('importTriggerBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', handleImportFile);
+$('dismissBackupBtn').addEventListener('click', () => { $('backupBanner').style.display = 'none'; });
+
+window.addEventListener('beforeunload', () => {
+    if (state.activeObjectUrl) URL.revokeObjectURL(state.activeObjectUrl);
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+    try { await initDB(); }
+    catch (e) {
+        console.warn('IndexedDB 不可用，退回无图模式', e);
+        showToast('IndexedDB 不可用，图片功能已停用（文字与调度不受影响）。', 'warning', null, 5000);
+    }
+
+    await loadMetadata();
+
+    if (('Notification' in window) && Notification.permission === 'granted') {
+        $('notifyBtn').textContent = '🔔 通知已开启';
+    }
+
+    updateTransform(false);
+    setInterval(checkDueReviews, 60000);
+});
+</script>
+</body>
+</html>

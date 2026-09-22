@@ -1,0 +1,16 @@
+{
+  "name": "记忆宫殿智能复习中枢",
+  "short_name": "记忆宫殿",
+  "description": "基于记忆宫殿法与自适应间隔重复的单词复习工具",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070c18",
+  "theme_color": "#0f172a",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
